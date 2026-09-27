@@ -33,31 +33,45 @@ function responsiveViewerAction(action, width) {
 
   const html = document.documentElement;
   const body = document.body;
-  const originalHtmlStyle = html.getAttribute("style");
-  const originalBodyStyle = body.getAttribute("style");
   const getViewportWidth = () => html.clientWidth;
   let currentWidth = Math.min(width, getViewportWidth() - HANDLE_WIDTH * 4);
 
-  function applyWidth() {
-    html.style.setProperty(
-      "background",
+  // Hide the live page and render it inside an iframe instead, so the framed
+  // document gets its own real viewport and @media/vw/matchMedia respond to it.
+  const originalBodyDisplay = body.style.display;
+  body.style.setProperty("display", "none", "important");
+
+  const container = document.createElement("div");
+  Object.assign(container.style, {
+    position: "fixed",
+    inset: "0",
+    zIndex: "2147483645",
+    background:
       "repeating-conic-gradient(#333 0% 25%, #3a3a3a 0% 50%) 0 0 / 24px 24px",
-      "important"
-    );
-    body.style.setProperty("max-width", currentWidth + "px", "important");
-    body.style.setProperty("width", currentWidth + "px", "important");
-    body.style.setProperty("margin-left", "auto", "important");
-    body.style.setProperty("margin-right", "auto", "important");
-    body.style.setProperty("box-shadow", "0 0 40px rgba(0, 0, 0, 0.5)", "important");
-    // Makes body the containing block for position:fixed descendants so they resize/center too.
-    body.style.setProperty("will-change", "transform", "important");
+    display: "flex",
+    justifyContent: "center",
+  });
+
+  const iframe = document.createElement("iframe");
+  iframe.src = location.href;
+  Object.assign(iframe.style, {
+    width: currentWidth + "px",
+    height: "100%",
+    border: "none",
+    background: "#fff",
+    boxShadow: "0 0 40px rgba(0, 0, 0, 0.5)",
+  });
+  container.appendChild(iframe);
+  html.appendChild(container);
+
+  function applyWidth() {
+    iframe.style.width = currentWidth + "px";
     positionHandles();
     if (window.__responsiveViewer) window.__responsiveViewer.width = currentWidth;
   }
 
   function positionHandles() {
-    // Measure the real rendered box instead of assuming symmetric centering math.
-    const rect = body.getBoundingClientRect();
+    const rect = iframe.getBoundingClientRect();
     leftHandle.style.left = rect.left - HANDLE_WIDTH + "px";
     rightHandle.style.left = rect.right + "px";
   }
@@ -78,14 +92,27 @@ function responsiveViewerAction(action, width) {
       e.preventDefault();
       startDrag(side);
     });
-    document.documentElement.appendChild(handle);
+    html.appendChild(handle);
     return handle;
   }
 
   const leftHandle = makeHandle("left");
   const rightHandle = makeHandle("right");
 
+  // Captures mousemove over the iframe during drags, since the iframe would
+  // otherwise swallow mouse events into its own document.
+  const dragOverlay = document.createElement("div");
+  Object.assign(dragOverlay.style, {
+    position: "fixed",
+    inset: "0",
+    zIndex: "2147483646",
+    cursor: "ew-resize",
+    display: "none",
+  });
+  html.appendChild(dragOverlay);
+
   function startDrag(side) {
+    dragOverlay.style.display = "block";
     function onMouseMove(e) {
       const center = getViewportWidth() / 2;
       const distance =
@@ -97,6 +124,7 @@ function responsiveViewerAction(action, width) {
       applyWidth();
     }
     function onMouseUp() {
+      dragOverlay.style.display = "none";
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
     }
@@ -116,18 +144,15 @@ function responsiveViewerAction(action, width) {
   }
 
   function cleanup() {
+    container.remove();
     leftHandle.remove();
     rightHandle.remove();
+    dragOverlay.remove();
     window.removeEventListener("resize", onResize);
-    if (originalHtmlStyle === null) {
-      html.removeAttribute("style");
+    if (originalBodyDisplay) {
+      body.style.display = originalBodyDisplay;
     } else {
-      html.setAttribute("style", originalHtmlStyle);
-    }
-    if (originalBodyStyle === null) {
-      body.removeAttribute("style");
-    } else {
-      body.setAttribute("style", originalBodyStyle);
+      body.style.removeProperty("display");
     }
   }
 
