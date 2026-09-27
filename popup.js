@@ -64,9 +64,35 @@ function responsiveViewerAction(action, width) {
   container.appendChild(iframe);
   html.appendChild(container);
 
+  const widthLabel = document.createElement("div");
+  Object.assign(widthLabel.style, {
+    position: "fixed",
+    padding: "8px 16px",
+    background: "rgba(0, 0, 0, 0.75)",
+    color: "#fff",
+    font: "18px/1.4 system-ui, sans-serif",
+    fontWeight: "600",
+    borderRadius: "6px",
+    zIndex: "2147483647",
+    pointerEvents: "none",
+    opacity: "0",
+    transition: "opacity 0.15s",
+  });
+  html.appendChild(widthLabel);
+  let hideLabelTimer;
+  function showWidthLabel() {
+    widthLabel.textContent = currentWidth + "px";
+    widthLabel.style.opacity = "1";
+    clearTimeout(hideLabelTimer);
+    hideLabelTimer = setTimeout(() => {
+      widthLabel.style.opacity = "0";
+    }, 1000);
+  }
+
   function applyWidth() {
     iframe.style.width = currentWidth + "px";
     positionHandles();
+    showWidthLabel();
     if (window.__responsiveViewer) window.__responsiveViewer.width = currentWidth;
   }
 
@@ -74,6 +100,8 @@ function responsiveViewerAction(action, width) {
     const rect = iframe.getBoundingClientRect();
     leftHandle.style.left = rect.left - HANDLE_WIDTH + "px";
     rightHandle.style.left = rect.right + "px";
+    widthLabel.style.top = rect.top + 12 + "px";
+    widthLabel.style.left = rect.right - widthLabel.offsetWidth - 12 + "px";
   }
 
   function makeHandle(side) {
@@ -148,6 +176,8 @@ function responsiveViewerAction(action, width) {
     leftHandle.remove();
     rightHandle.remove();
     dragOverlay.remove();
+    widthLabel.remove();
+    clearTimeout(hideLabelTimer);
     window.removeEventListener("resize", onResize);
     if (originalBodyDisplay) {
       body.style.display = originalBodyDisplay;
