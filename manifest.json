@@ -5,9 +5,7 @@
   "description": "Center and constrain page width for easier viewing on ultra-wide monitors.",
   "permissions": ["scripting", "activeTab"],
   "action": {
-    "default_title": "Toggle centered width (1920px)"
-  },
-  "background": {
-    "service_worker": "background.js"
+    "default_title": "Responsive Viewer",
+    "default_popup": "popup.html"
   }
 }

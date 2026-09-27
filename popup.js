@@ -1,16 +1,34 @@
-const DEFAULT_WIDTH = 1920;
-
-const activeTabs = new Set();
+const PRESETS = [360, 480, 640, 768, 1024, 1280, 1366, 1440, 1600, 1920, 2560, 3440];
 
 // Runs inside the page. Must be self-contained (no outer closure references).
-function toggleResponsiveViewer(defaultWidth) {
+function responsiveViewerAction(action, width) {
   const MIN_WIDTH = 320;
   const HANDLE_WIDTH = 8;
 
+  if (action === "disable") {
+    if (window.__responsiveViewer) {
+      window.__responsiveViewer.cleanup();
+      delete window.__responsiveViewer;
+    }
+    return { active: false, width: null, viewportWidth: document.documentElement.clientWidth };
+  }
+
+  if (action === "query") {
+    return {
+      active: !!window.__responsiveViewer,
+      width: window.__responsiveViewer ? window.__responsiveViewer.width : null,
+      viewportWidth: document.documentElement.clientWidth,
+    };
+  }
+
+  // action === "setWidth"
   if (window.__responsiveViewer) {
-    window.__responsiveViewer.cleanup();
-    delete window.__responsiveViewer;
-    return;
+    window.__responsiveViewer.setWidth(width);
+    return {
+      active: true,
+      width: window.__responsiveViewer.width,
+      viewportWidth: document.documentElement.clientWidth,
+    };
   }
 
   const html = document.documentElement;
@@ -18,7 +36,7 @@ function toggleResponsiveViewer(defaultWidth) {
   const originalHtmlStyle = html.getAttribute("style");
   const originalBodyStyle = body.getAttribute("style");
   const getViewportWidth = () => html.clientWidth;
-  let width = Math.min(defaultWidth, getViewportWidth() - HANDLE_WIDTH * 4);
+  let currentWidth = Math.min(width, getViewportWidth() - HANDLE_WIDTH * 4);
 
   function applyWidth() {
     html.style.setProperty(
@@ -26,14 +44,15 @@ function toggleResponsiveViewer(defaultWidth) {
       "repeating-conic-gradient(#333 0% 25%, #3a3a3a 0% 50%) 0 0 / 24px 24px",
       "important"
     );
-    body.style.setProperty("max-width", width + "px", "important");
-    body.style.setProperty("width", width + "px", "important");
+    body.style.setProperty("max-width", currentWidth + "px", "important");
+    body.style.setProperty("width", currentWidth + "px", "important");
     body.style.setProperty("margin-left", "auto", "important");
     body.style.setProperty("margin-right", "auto", "important");
     body.style.setProperty("box-shadow", "0 0 40px rgba(0, 0, 0, 0.5)", "important");
     // Makes body the containing block for position:fixed descendants so they resize/center too.
     body.style.setProperty("will-change", "transform", "important");
     positionHandles();
+    if (window.__responsiveViewer) window.__responsiveViewer.width = currentWidth;
   }
 
   function positionHandles() {
@@ -71,7 +90,7 @@ function toggleResponsiveViewer(defaultWidth) {
       const center = getViewportWidth() / 2;
       const distance =
         side === "right" ? e.clientX - center : center - e.clientX;
-      width = Math.max(
+      currentWidth = Math.max(
         MIN_WIDTH,
         Math.min(getViewportWidth() - HANDLE_WIDTH * 2, distance * 2)
       );
@@ -86,10 +105,15 @@ function toggleResponsiveViewer(defaultWidth) {
   }
 
   function onResize() {
-    width = Math.min(width, getViewportWidth() - HANDLE_WIDTH * 2);
+    currentWidth = Math.min(currentWidth, getViewportWidth() - HANDLE_WIDTH * 2);
     applyWidth();
   }
   window.addEventListener("resize", onResize);
+
+  function setWidth(newWidth) {
+    currentWidth = Math.max(MIN_WIDTH, Math.min(newWidth, getViewportWidth() - HANDLE_WIDTH * 2));
+    applyWidth();
+  }
 
   function cleanup() {
     leftHandle.remove();
@@ -107,19 +131,57 @@ function toggleResponsiveViewer(defaultWidth) {
     }
   }
 
+  window.__responsiveViewer = { cleanup, setWidth, width: currentWidth };
   applyWidth();
-  window.__responsiveViewer = { cleanup };
+  return { active: true, width: currentWidth, viewportWidth: getViewportWidth() };
 }
 
-chrome.action.onClicked.addListener(async (tab) => {
-  if (!tab.id) return;
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: toggleResponsiveViewer,
-      args: [DEFAULT_WIDTH],
+async function getActiveTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
+}
+
+async function run(action, width) {
+  const tab = await getActiveTab();
+  const [{ result }] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: responsiveViewerAction,
+    args: [action, width ?? null],
+  });
+  return result;
+}
+
+async function init() {
+  const state = await run("query");
+  const list = document.getElementById("presets");
+  const offBtn = document.getElementById("off-btn");
+  const buttons = new Map();
+
+  function render(state) {
+    buttons.forEach((btn, preset) => {
+      btn.disabled = preset > state.viewportWidth;
+      btn.classList.toggle("active", state.active && state.width === preset);
     });
-  } catch (err) {
-    console.error("Responsive Viewer failed:", err);
+    offBtn.disabled = !state.active;
   }
-});
+
+  PRESETS.forEach((preset) => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.textContent = preset + "px";
+    btn.addEventListener("click", async () => {
+      render(await run("setWidth", preset));
+    });
+    li.appendChild(btn);
+    list.appendChild(li);
+    buttons.set(preset, btn);
+  });
+
+  offBtn.addEventListener("click", async () => {
+    render(await run("disable"));
+  });
+
+  render(state);
+}
+
+init();
