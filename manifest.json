@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Responsive Viewer",
+  "name": "Page Resizer",
   "version": "1.0.0",
-  "description": "Center and constrain page width for easier viewing on ultra-wide monitors.",
+  "description": "Center and constrain any page's width so full-width sites don't stretch across ultra-wide monitors.",
   "permissions": ["scripting", "activeTab"],
   "action": {
-    "default_title": "Responsive Viewer",
+    "default_title": "Page Resizer",
     "default_popup": "popup.html"
   }
 }
