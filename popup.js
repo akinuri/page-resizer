@@ -196,6 +196,28 @@ async function getActiveTab() {
   return tab;
 }
 
+const NON_SCRIPTABLE_PATTERNS = [
+  /^chrome:/,
+  /^edge:/,
+  /^about:/,
+  /^chrome-extension:/,
+  /^https:\/\/chrome\.google\.com\/webstore/,
+  /^https:\/\/chromewebstore\.google\.com/,
+];
+
+function getNonScriptableReason(tab) {
+  if (!tab || !tab.url) {
+    return "This page can't be resized.";
+  }
+  if (tab.url.startsWith("file:")) {
+    return "Local files aren't supported unless \"Allow access to file URLs\" is enabled for this extension.";
+  }
+  if (NON_SCRIPTABLE_PATTERNS.some((re) => re.test(tab.url))) {
+    return "Browser and store pages can't be resized.";
+  }
+  return null;
+}
+
 async function run(action, width) {
   const tab = await getActiveTab();
   const [{ result }] = await chrome.scripting.executeScript({
@@ -207,10 +229,32 @@ async function run(action, width) {
 }
 
 async function init() {
-  const state = await run("query");
   const list = document.getElementById("presets");
   const offBtn = document.getElementById("off-btn");
+  const warning = document.getElementById("warning");
   const buttons = new Map();
+
+  function showWarning(message) {
+    warning.textContent = message;
+    warning.style.display = "block";
+    list.style.display = "none";
+    offBtn.disabled = true;
+  }
+
+  const tab = await getActiveTab();
+  const reason = getNonScriptableReason(tab);
+  if (reason) {
+    showWarning(reason);
+    return;
+  }
+
+  let state;
+  try {
+    state = await run("query");
+  } catch (err) {
+    showWarning("Couldn't access this page: " + err.message);
+    return;
+  }
 
   function render(state) {
     buttons.forEach((btn, preset) => {
@@ -225,7 +269,11 @@ async function init() {
     const btn = document.createElement("button");
     btn.textContent = preset + "px";
     btn.addEventListener("click", async () => {
-      render(await run("setWidth", preset));
+      try {
+        render(await run("setWidth", preset));
+      } catch (err) {
+        showWarning("Couldn't access this page: " + err.message);
+      }
     });
     li.appendChild(btn);
     list.appendChild(li);
@@ -233,7 +281,11 @@ async function init() {
   });
 
   offBtn.addEventListener("click", async () => {
-    render(await run("disable"));
+    try {
+      render(await run("disable"));
+    } catch (err) {
+      showWarning("Couldn't access this page: " + err.message);
+    }
   });
 
   render(state);
