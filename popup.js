@@ -1,7 +1,7 @@
 const PRESETS = [360, 480, 640, 768, 1024, 1280, 1366, 1440, 1600, 1920, 2560, 3440];
 
 // Runs inside the page. Must be self-contained (no outer closure references).
-function responsiveViewerAction(action, width) {
+function responsiveViewerAction(action, width, useIframe) {
   const MIN_WIDTH = 320;
   const HANDLE_WIDTH = 8;
 
@@ -17,6 +17,7 @@ function responsiveViewerAction(action, width) {
     return {
       active: !!window.__responsiveViewer,
       width: window.__responsiveViewer ? window.__responsiveViewer.width : null,
+      useIframe: window.__responsiveViewer ? window.__responsiveViewer.useIframe : null,
       viewportWidth: document.documentElement.clientWidth,
     };
   }
@@ -36,33 +37,41 @@ function responsiveViewerAction(action, width) {
   const getViewportWidth = () => html.clientWidth;
   let currentWidth = Math.min(width, getViewportWidth() - HANDLE_WIDTH * 4);
 
-  // Hide the live page and render it inside an iframe instead, so the framed
-  // document gets its own real viewport and @media/vw/matchMedia respond to it.
   const originalBodyDisplay = body.style.display;
-  body.style.setProperty("display", "none", "important");
+  const originalHtmlStyle = html.getAttribute("style");
+  const originalBodyStyle = body.getAttribute("style");
+  let container = null;
+  let iframe = null;
 
-  const container = document.createElement("div");
-  Object.assign(container.style, {
-    position: "fixed",
-    inset: "0",
-    zIndex: "2147483645",
-    background:
-      "repeating-conic-gradient(#333 0% 25%, #3a3a3a 0% 50%) 0 0 / 24px 24px",
-    display: "flex",
-    justifyContent: "center",
-  });
+  if (useIframe) {
+    // Hide the live page and render it inside an iframe instead, so the framed
+    // document gets its own real viewport and @media/vw/matchMedia respond to it.
+    body.style.setProperty("display", "none", "important");
 
-  const iframe = document.createElement("iframe");
-  iframe.src = location.href;
-  Object.assign(iframe.style, {
-    width: currentWidth + "px",
-    height: "100%",
-    border: "none",
-    background: "#fff",
-    boxShadow: "0 0 40px rgba(0, 0, 0, 0.5)",
-  });
-  container.appendChild(iframe);
-  html.appendChild(container);
+    container = document.createElement("div");
+    Object.assign(container.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "2147483645",
+      background:
+        "repeating-conic-gradient(#333 0% 25%, #3a3a3a 0% 50%) 0 0 / 24px 24px",
+      display: "flex",
+      justifyContent: "center",
+    });
+
+    iframe = document.createElement("iframe");
+    iframe.src = location.href;
+    Object.assign(iframe.style, {
+      width: currentWidth + "px",
+      height: "100%",
+      border: "none",
+      background: "#fff",
+      boxShadow: "0 0 40px rgba(0, 0, 0, 0.5)",
+    });
+    container.appendChild(iframe);
+    html.appendChild(container);
+  }
+  const frameEl = useIframe ? iframe : body;
 
   const widthLabel = document.createElement("div");
   Object.assign(widthLabel.style, {
@@ -90,14 +99,29 @@ function responsiveViewerAction(action, width) {
   }
 
   function applyWidth() {
-    iframe.style.width = currentWidth + "px";
+    if (useIframe) {
+      iframe.style.width = currentWidth + "px";
+    } else {
+      html.style.setProperty(
+        "background",
+        "repeating-conic-gradient(#333 0% 25%, #3a3a3a 0% 50%) 0 0 / 24px 24px",
+        "important"
+      );
+      body.style.setProperty("max-width", currentWidth + "px", "important");
+      body.style.setProperty("width", currentWidth + "px", "important");
+      body.style.setProperty("margin-left", "auto", "important");
+      body.style.setProperty("margin-right", "auto", "important");
+      body.style.setProperty("box-shadow", "0 0 40px rgba(0, 0, 0, 0.5)", "important");
+      // Makes body the containing block for position:fixed descendants so they resize/center too.
+      body.style.setProperty("will-change", "transform", "important");
+    }
     positionHandles();
     showWidthLabel();
     if (window.__responsiveViewer) window.__responsiveViewer.width = currentWidth;
   }
 
   function positionHandles() {
-    const rect = iframe.getBoundingClientRect();
+    const rect = frameEl.getBoundingClientRect();
     leftHandle.style.left = rect.left - HANDLE_WIDTH + "px";
     rightHandle.style.left = rect.right + "px";
     widthLabel.style.top = rect.top + 12 + "px";
@@ -171,22 +195,32 @@ function responsiveViewerAction(action, width) {
     applyWidth();
   }
 
+  function restoreStyle(el, original) {
+    if (original === null) el.removeAttribute("style");
+    else el.setAttribute("style", original);
+  }
+
   function cleanup() {
-    container.remove();
+    if (container) container.remove();
     leftHandle.remove();
     rightHandle.remove();
     dragOverlay.remove();
     widthLabel.remove();
     clearTimeout(hideLabelTimer);
     window.removeEventListener("resize", onResize);
-    if (originalBodyDisplay) {
-      body.style.display = originalBodyDisplay;
+    if (useIframe) {
+      if (originalBodyDisplay) {
+        body.style.display = originalBodyDisplay;
+      } else {
+        body.style.removeProperty("display");
+      }
     } else {
-      body.style.removeProperty("display");
+      restoreStyle(html, originalHtmlStyle);
+      restoreStyle(body, originalBodyStyle);
     }
   }
 
-  window.__responsiveViewer = { cleanup, setWidth, width: currentWidth };
+  window.__responsiveViewer = { cleanup, setWidth, width: currentWidth, useIframe };
   applyWidth();
   return { active: true, width: currentWidth, viewportWidth: getViewportWidth() };
 }
@@ -218,12 +252,12 @@ function getNonScriptableReason(tab) {
   return null;
 }
 
-async function run(action, width) {
+async function run(action, width, useIframe) {
   const tab = await getActiveTab();
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: responsiveViewerAction,
-    args: [action, width ?? null],
+    args: [action, width ?? null, !!useIframe],
   });
   return result;
 }
@@ -232,6 +266,7 @@ async function init() {
   const list = document.getElementById("presets");
   const offBtn = document.getElementById("off-btn");
   const warning = document.getElementById("warning");
+  const iframeToggle = document.getElementById("iframe-toggle");
   const buttons = new Map();
 
   function showWarning(message) {
@@ -239,6 +274,7 @@ async function init() {
     warning.style.display = "block";
     list.style.display = "none";
     offBtn.disabled = true;
+    iframeToggle.disabled = true;
   }
 
   const tab = await getActiveTab();
@@ -264,13 +300,31 @@ async function init() {
     offBtn.disabled = !state.active;
   }
 
+  let useIframe = localStorage.getItem("useIframe") === "true";
+  if (state.active) useIframe = !!state.useIframe;
+  iframeToggle.checked = useIframe;
+
+  iframeToggle.addEventListener("change", async () => {
+    useIframe = iframeToggle.checked;
+    localStorage.setItem("useIframe", String(useIframe));
+    try {
+      const current = await run("query");
+      if (current.active) {
+        await run("disable");
+        render(await run("setWidth", current.width, useIframe));
+      }
+    } catch (err) {
+      showWarning("Couldn't access this page: " + err.message);
+    }
+  });
+
   PRESETS.forEach((preset) => {
     const li = document.createElement("li");
     const btn = document.createElement("button");
     btn.textContent = preset + "px";
     btn.addEventListener("click", async () => {
       try {
-        render(await run("setWidth", preset));
+        render(await run("setWidth", preset, useIframe));
       } catch (err) {
         showWarning("Couldn't access this page: " + err.message);
       }

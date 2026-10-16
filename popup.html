@@ -52,6 +52,13 @@
         text-align: center;
         font-weight: 600;
       }
+      .option {
+        display: block;
+        padding: 8px 12px 2px;
+        font-size: 13px;
+        cursor: pointer;
+        user-select: none;
+      }
       #warning {
         display: none;
         margin: 6px;
@@ -67,6 +74,9 @@
   </head>
   <body>
     <div id="warning"></div>
+    <label class="option" title="Render the page in an iframe so media queries react to the chosen width">
+      <input type="checkbox" id="iframe-toggle" /> Use iframe
+    </label>
     <ul id="presets"></ul>
     <div class="off">
       <button id="off-btn">Turn Off</button>
