@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Page Resizer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Center and constrain any page's width so full-width sites don't stretch across ultra-wide monitors.",
   "permissions": ["scripting", "activeTab"],
   "icons": {
